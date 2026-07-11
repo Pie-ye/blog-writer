@@ -1,0 +1,23 @@
+[Unit]
+Description=Draftwell Blog Writer
+Documentation=file:/home/pieye/Container/blog-writer/README.md
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pieye
+Group=pieye
+WorkingDirectory=/home/pieye/Container/blog-writer
+Environment=NODE_ENV=production
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStartPre=/usr/bin/npm run migrate
+ExecStartPre=/usr/bin/npm run startup:check
+ExecStart=/usr/bin/npm run start -- --port 3000
+Restart=always
+RestartSec=10
+TimeoutStartSec=120
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=multi-user.target
