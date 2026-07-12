@@ -1,5 +1,7 @@
 # Draftwell
 
+繁體中文： [README.zh-TW.md](README.zh-TW.md)
+
 Draftwell is a Hugo-only browser writing desk. It publishes Markdown and media to a repository selected through a GitHub App; it does not store posts or media in its database.
 
 ## Current scope
