@@ -5,17 +5,9 @@ import {
   mediaMarkup,
   parseHugoPost,
   normalizeRepositoryPath,
-  parseTaxonomyInput,
   renderHugoPost,
   toHugoStaticUrl,
 } from "./content";
-
-test("parses comma-delimited taxonomy input without empty values", () => {
-  assert.deepEqual(
-    parseTaxonomyInput("日常, 心情，, 旅行,"),
-    ["日常", "心情", "旅行"],
-  );
-});
 
 test("converts Hugo static paths into site-rooted URLs", () => {
   assert.equal(

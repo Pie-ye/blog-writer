@@ -14,10 +14,6 @@ export type PostMetadata = {
   tags: string[];
 };
 
-export function parseTaxonomyInput(value: string): string[] {
-  return value.split(/[,，]/).map((item) => item.trim()).filter(Boolean);
-}
-
 const UNSAFE_PATH = /(^\/|\\|\u0000|(^|\/)\.\.?(\/|$))/;
 const TAIPEI_OFFSET = "+08:00";
 

@@ -5,7 +5,6 @@ import Link from "next/link";
 import {
   buildPostPath,
   DEFAULT_PROFILE,
-  parseTaxonomyInput,
   parseHugoPost,
   renderHugoPost,
   type PostMetadata,
@@ -36,12 +35,14 @@ const initialMetadata: PostMetadata = {
   tags: [],
 };
 
-const initialBody = "今天想記下什麼？\n";
-
 type Notice = { tone: "info" | "error"; message: string } | null;
 type ProfileDraft = { installationId: string; owner: string; repository: string; branch: string; contentDirectory: string; imageDirectory: string; timezone: string };
 type RepositoryOption = { fullName: string; defaultBranch: string };
 type PostOption = { name: string; path: string };
+
+function listFromInput(value: string): string[] {
+  return value.split(",").map((item) => item.trim()).filter(Boolean);
+}
 
 function formatBytes(value: number): string {
   return `${(value / (1024 * 1024)).toFixed(value > 10 * 1024 * 1024 ? 1 : 2)} MB`;
@@ -49,9 +50,7 @@ function formatBytes(value: number): string {
 
 export function Writer() {
   const [metadata, setMetadata] = useState(initialMetadata);
-  const [body, setBody] = useState(initialBody);
-  const [categoriesInput, setCategoriesInput] = useState(initialMetadata.categories.join(", "));
-  const [tagsInput, setTagsInput] = useState("");
+  const [body, setBody] = useState("今天想記下什麼？\n");
   const [profile, setProfile] = useState<ProfileDraft>({ installationId: "", owner: "", repository: "", branch: DEFAULT_PROFILE.branch, contentDirectory: DEFAULT_PROFILE.contentDirectory, imageDirectory: DEFAULT_PROFILE.imageDirectory, timezone: DEFAULT_PROFILE.timezone });
   const [installations, setInstallations] = useState<number[]>([]);
   const [repositories, setRepositories] = useState<RepositoryOption[]>([]);
@@ -60,7 +59,6 @@ export function Writer() {
   const [posts, setPosts] = useState<PostOption[]>([]);
   const [editingPath, setEditingPath] = useState<string | null>(null);
   const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
-  const [editorBaseline, setEditorBaseline] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice>({
     tone: "info",
     message: "GitHub App 尚未連線。你可以先編輯與預覽，發布會在完成設定後啟用。",
@@ -68,61 +66,9 @@ export function Writer() {
   const [hydrated, setHydrated] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
-  function editorStateKey(nextMetadata: PostMetadata, nextBody: string, nextEditingPath: string | null, nextCategoriesInput: string, nextTagsInput: string): string {
-    return JSON.stringify({ nextMetadata, nextBody, nextEditingPath, nextCategoriesInput, nextTagsInput });
-  }
-
-  function currentEditorKey(): string {
-    return editorStateKey(metadata, body, editingPath, categoriesInput, tagsInput);
-  }
-
-  function hasUnsavedChanges(): boolean {
-    return editorBaseline !== null && editorBaseline !== currentEditorKey();
-  }
-
-  function confirmDiscardChanges(): boolean {
-    return !hasUnsavedChanges() || window.confirm("目前有尚未儲存的變更，確定要捨棄嗎？");
-  }
-
-  function normalizedMetadata(): PostMetadata {
-    return {
-      ...metadata,
-      categories: parseTaxonomyInput(categoriesInput),
-      tags: parseTaxonomyInput(tagsInput),
-    };
-  }
-
-  function normalizeTaxonomyInputs(): PostMetadata {
-    const nextMetadata = normalizedMetadata();
-    const nextCategoriesInput = nextMetadata.categories.join(", ");
-    const nextTagsInput = nextMetadata.tags.join(", ");
-    setCategoriesInput(nextCategoriesInput);
-    setTagsInput(nextTagsInput);
-    setMetadata(nextMetadata);
-    return nextMetadata;
-  }
-
-  function resetToNewPost() {
-    const nextMetadata = { ...initialMetadata, date: taipeiDateTimeInput() };
-    const nextCategoriesInput = nextMetadata.categories.join(", ");
-    const nextTagsInput = nextMetadata.tags.join(", ");
-    setMetadata(nextMetadata);
-    setBody(initialBody);
-    setCategoriesInput(nextCategoriesInput);
-    setTagsInput(nextTagsInput);
-    setEditingPath(null);
-    setEditorBaseline(editorStateKey(nextMetadata, initialBody, null, nextCategoriesInput, nextTagsInput));
-  }
-
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      const nextMetadata = { ...initialMetadata, date: taipeiDateTimeInput() };
-      const nextCategoriesInput = nextMetadata.categories.join(", ");
-      const nextTagsInput = nextMetadata.tags.join(", ");
-      setMetadata(nextMetadata);
-      setCategoriesInput(nextCategoriesInput);
-      setTagsInput(nextTagsInput);
-      setEditorBaseline(editorStateKey(nextMetadata, initialBody, null, nextCategoriesInput, nextTagsInput));
+      setMetadata((current) => current.date ? current : { ...current, date: taipeiDateTimeInput() });
       setHydrated(true);
     }, 0);
     return () => window.clearTimeout(timer);
@@ -149,7 +95,6 @@ export function Writer() {
     setPosts([]);
     setEditingPath(null);
     setActiveProfileId(null);
-    setEditorBaseline(null);
     setProfile({ installationId: "", owner: "", repository: "", branch: DEFAULT_PROFILE.branch, contentDirectory: DEFAULT_PROFILE.contentDirectory, imageDirectory: DEFAULT_PROFILE.imageDirectory, timezone: DEFAULT_PROFILE.timezone });
     setNotice({ tone: "info", message: "已登出 GitHub。你可以重新登入測試流程。" });
   }
@@ -268,52 +213,24 @@ export function Writer() {
 
   async function publishPost() {
     if (!activeProfileId) { setNotice({ tone: "error", message: "Save a repository profile before publishing." }); return; }
-    const nextMetadata = normalizeTaxonomyInputs();
-    const response = await fetch("/api/publish", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ profileId: activeProfileId, metadata: nextMetadata, body }) });
+    const response = await fetch("/api/publish", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ profileId: activeProfileId, metadata, body }) });
     const result = await response.json() as { error?: string; commit?: { url: string } };
-    if (response.ok && result.commit) {
-      setEditorBaseline(editorStateKey(nextMetadata, body, null, nextMetadata.categories.join(", "), nextMetadata.tags.join(", ")));
-      setNotice({ tone: "info", message: `Published. Commit: ${result.commit.url}` });
-    } else {
-      setNotice({ tone: "error", message: result.error ?? "Could not publish post." });
-    }
+    setNotice(response.ok && result.commit ? { tone: "info", message: `Published. Commit: ${result.commit.url}` } : { tone: "error", message: result.error ?? "Could not publish post." });
   }
 
   async function openPost(path: string) {
     if (!activeProfileId) return;
-    if (path === editingPath || !confirmDiscardChanges()) return;
     const response = await fetch(`/api/post?profileId=${encodeURIComponent(activeProfileId)}&path=${encodeURIComponent(path)}`);
     const result = await response.json() as { content?: string; error?: string };
     if (!response.ok || !result.content) { setNotice({ tone: "error", message: result.error ?? "Could not open post." }); return; }
-    try {
-      const parsed = parseHugoPost(result.content);
-      const nextCategoriesInput = parsed.metadata.categories.join(", ");
-      const nextTagsInput = parsed.metadata.tags.join(", ");
-      setMetadata(parsed.metadata);
-      setCategoriesInput(nextCategoriesInput);
-      setTagsInput(nextTagsInput);
-      setBody(parsed.body);
-      setEditingPath(path);
-      setEditorBaseline(editorStateKey(parsed.metadata, parsed.body, path, nextCategoriesInput, nextTagsInput));
-    } catch (error) { setNotice({ tone: "error", message: error instanceof Error ? error.message : "Could not parse post." }); }
+    try { const parsed = parseHugoPost(result.content); setMetadata(parsed.metadata); setBody(parsed.body); setEditingPath(path); } catch (error) { setNotice({ tone: "error", message: error instanceof Error ? error.message : "Could not parse post." }); }
   }
 
   async function saveExistingPost() {
     if (!activeProfileId || !editingPath) return;
-    const nextMetadata = normalizeTaxonomyInputs();
-    const response = await fetch("/api/post", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ profileId: activeProfileId, path: editingPath, metadata: nextMetadata, body }) });
+    const response = await fetch("/api/post", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ profileId: activeProfileId, path: editingPath, metadata, body }) });
     const result = await response.json() as { error?: string };
-    if (response.ok) {
-      setEditorBaseline(editorStateKey(nextMetadata, body, editingPath, nextMetadata.categories.join(", "), nextMetadata.tags.join(", ")));
-      setNotice({ tone: "info", message: "Post updated on GitHub." });
-    } else {
-      setNotice({ tone: "error", message: result.error ?? "Could not update post." });
-    }
-  }
-
-  function startNewPost() {
-    if (!confirmDiscardChanges()) return;
-    resetToNewPost();
+    setNotice(response.ok ? { tone: "info", message: "Post updated on GitHub." } : { tone: "error", message: result.error ?? "Could not update post." });
   }
 
   async function deleteExistingPost() {
@@ -321,7 +238,7 @@ export function Writer() {
     const response = await fetch("/api/post", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ profileId: activeProfileId, path: editingPath }) });
     const result = await response.json() as { error?: string };
     if (!response.ok) { setNotice({ tone: "error", message: result.error ?? "Could not delete post." }); return; }
-    setPosts((current) => current.filter((post) => post.path !== editingPath)); resetToNewPost(); setNotice({ tone: "info", message: "Post deleted from GitHub." });
+    setPosts((current) => current.filter((post) => post.path !== editingPath)); setEditingPath(null); setBody(""); setMetadata({ ...initialMetadata, date: taipeiDateTimeInput() }); setNotice({ tone: "info", message: "Post deleted from GitHub." });
   }
 
   return (
@@ -355,7 +272,7 @@ export function Writer() {
       <section className="workspace">
         <div className="editor-pane">
           <div className="pane-heading"><span>EDITOR</span><span>{editingPath ?? postPath}</span></div>
-          {posts.length > 0 && <nav className="post-list" aria-label="Past posts"><span>PAST POSTS</span><button type="button" className={!editingPath ? "selected" : ""} onClick={startNewPost}>新增文章</button>{posts.map((post) => <button type="button" key={post.path} className={post.path === editingPath ? "selected" : ""} onClick={() => void openPost(post.path)}>{post.name}</button>)}</nav>}
+          {posts.length > 0 && <nav className="post-list" aria-label="Past posts"><span>PAST POSTS</span>{posts.map((post) => <button type="button" key={post.path} className={post.path === editingPath ? "selected" : ""} onClick={() => void openPost(post.path)}>{post.name}</button>)}</nav>}
           <div className="metadata-grid">
             <label className="title-field">標題
               <input value={metadata.title} onChange={(event) => setMetadata({ ...metadata, title: event.target.value })} placeholder="今天的標題" />
@@ -364,10 +281,10 @@ export function Writer() {
               <input type="datetime-local" value={metadata.date} onChange={(event) => setMetadata({ ...metadata, date: event.target.value })} />
             </label>
             <label>分類（逗號分隔）
-              <input value={categoriesInput} onChange={(event) => { setCategoriesInput(event.target.value); setMetadata({ ...metadata, categories: parseTaxonomyInput(event.target.value) }); }} onBlur={normalizeTaxonomyInputs} />
+              <input value={metadata.categories.join(", ")} onChange={(event) => setMetadata({ ...metadata, categories: listFromInput(event.target.value) })} />
             </label>
             <label>標籤（逗號分隔）
-              <input value={tagsInput} onChange={(event) => { setTagsInput(event.target.value); setMetadata({ ...metadata, tags: parseTaxonomyInput(event.target.value) }); }} onBlur={normalizeTaxonomyInputs} placeholder="日常, 心情" />
+              <input value={metadata.tags.join(", ")} onChange={(event) => setMetadata({ ...metadata, tags: listFromInput(event.target.value) })} placeholder="日常, 心情" />
             </label>
           </div>
           <div className="toggle-row">
